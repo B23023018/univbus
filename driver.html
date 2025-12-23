@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>バス位置情報送信</title>
+</head>
+<body>
+    <h1>バスID: Bus_01</h1>
+    <p>ステータス: <span id="status">位置情報送信待機中...</span></p>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script>
+        // 【要編集】ここにステップ1でメモしたfirebaseConfigのコード全体を貼り付けます
+        const firebaseConfig = {
+    apiKey: "AIzaSyD_5-GBdDGz2Y14lzMz0u_11vx3gC3fVNA",
+    authDomain: "university-bus-traccar.firebaseapp.com",
+    databaseURL: "https://university-bus-traccar-default-rtdb.firebaseio.com",
+    projectId: "university-bus-traccar",
+    storageBucket: "university-bus-traccar.firebasestorage.app",
+    messagingSenderId: "241925341980",
+    appId: "1:241925341980:web:fdcff1e5683f6c811430d9" 
+        };
+        firebase.initializeApp(firebaseConfig);
+
+        const database = firebase.database();
+        const busId = "Bus_01";
+        const statusElement = document.getElementById('status');
+
+        function sendLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        database.ref('bus_locations/' + busId).set({
+                            lat: latitude,
+                            lng: longitude,
+                            timestamp: Date.now()
+                        })
+                        .then(() => {
+                            statusElement.textContent = `送信成功: 緯度 ${latitude.toFixed(5)}, 経度 ${longitude.toFixed(5)}`;
+                        });
+                    },
+                    (error) => {
+                        statusElement.textContent = `GPSエラー: ${error.message}`;
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            } else {
+                statusElement.textContent = "Geolocationをサポートしていません。";
+            }
+        }
+        sendLocation();
+        setInterval(sendLocation, 5000); // 5秒ごとに実行
+    </script>
+</body>
+</html>
