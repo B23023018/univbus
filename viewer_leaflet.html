@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>名桜大学バスロケーション（道路沿いルート表示版）</title>
+    <meta charset="utf-8">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+    
+    <style>
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        /* ルート案内のパネルを非表示にするためのCSS（L.Routing.controlの設定と連動） */
+        .leaflet-routing-container {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+    
+    <script>
+        // ==========================================================
+        // 1. Firebaseと地図の基本設定
+        // ==========================================================
+        
+        // 【要編集】あなたのfirebaseConfigのコード全体を貼り付けます
+        const firebaseConfig = {
+            apiKey: "AIzaSyD_5-GBdDGz2Y14lzMz0u_11vx3gC3fVNA",
+            authDomain: "university-bus-traccar.firebaseapp.com",
+            databaseURL: "https://university-bus-traccar-default-rtdb.firebaseio.com",
+            projectId: "university-bus-traccar",
+            storageBucket: "university-bus-traccar.firebasestorage.app",
+            messagingSenderId: "241925341980",
+            appId: "1:241925341980:web:fdcff1e5683f6c811430d9"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+	const busIcon = L.icon({
+		iconUrl: 'https://illust8.com/wp-content/uploads/2020/02/local-bus_6879.png',
+		iconSize: [45, 45],
+		iconAnchor: [22, 22],
+		popupAnchor: [0,-20]
+	}); 
+        
+        // 名桜大学周辺の座標
+        const universityCenter = [26.62437586953866, 127.97423291261215]; 
+        const defaultZoom = 15;
+        let map;
+        const busMarkers = {};
+        
+        // ==========================================================
+        // 2. ルート情報 (Waypoint) の設定
+        // ==========================================================
+
+        // Leaflet Routing Machineが道路に沿った経路を計算するための主要な経由地リスト
+        const waypoints = [
+           // 01. 名桜大学 (始点/終点)
+   		L.latLng(26.623171384839402, 127.97443579361448),  // 大学構内バス停（またはロータリー）
+
+    		// 02. 北部看護学校前
+    		L.latLng(26.61296579608555, 127.97177504232886),  // 門から出てすぐの交差点付近
+
+    		// 03. セブンイレブン名護為又店前
+    		L.latLng(26.607649756583598, 127.98020400843268),  // 為又交差点付近
+
+   		// 04. 中華レストラン（龍天下）向い
+    		L.latLng(26.60220793052926, 127.98259872883555),  // 推定される地点
+
+    		// 05. サンシャイン名桜前
+    		L.latLng(26.58100235863654, 127.98595033068462),  // 推定される地点
+
+    		// 06. 名護城入口バス停
+    		L.latLng(26.586722971407774, 127.98635656423481),  // 58号線沿いのバス停
+
+    		// 07. 名護十字路バス停
+    		L.latLng(26.589046647402686, 127.9846614845589),  // 名護市の中心部
+
+    		// 08. 大西バス停（ファミリーマート大西通り店）
+    		L.latLng(26.59157046688996, 127.98159894417788),  // 大西の交差点付近
+
+    		// 09. 北部合同庁舎前
+    		L.latLng(26.5933893573421, 127.97836628678179),  // 庁舎前の通り
+
+    		// 10. 宮里３丁目バス停
+    		L.latLng(26.596343509647063, 127.96833394223006),  // 58号線沿いのバス停
+
+    		// 11. 名桜マンション前
+    		L.latLng(26.59853598121166, 127.96549407726164),  // 推定される地点
+
+    		// 12. 為又バス停
+    		L.latLng(26.605380519551264, 127.97304980063508),  // 為又交差点周辺（セブンよりやや大学寄り）
+
+    		// 13. 名桜ボウル前
+    		L.latLng(26.607825359123986, 127.97020143068463),  // 推定される地点
+
+		// 14.　名桜ボウルー名桜大学間
+		L.latLng(26.611836561671332, 127.96986922686285),  // 推定される地点
+
+    		// 15. 名桜大学 (終点)
+    		L.latLng(26.623161530052776, 127.97453484776157)   // 大学構内バス停（始点と同じ場所）
+	];
+
+        // ==========================================================
+        // 3. 地図の初期化とルートの描画
+        // ==========================================================
+
+        function initLeafletMap() {
+            map = L.map('map').setView(universityCenter, defaultZoom);
+
+            // OpenStreetMapのタイルレイヤーを追加
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            // ? ルーティングコントロールの追加 (道路に沿った線を描画) ?
+            L.Routing.control({
+                waypoints: waypoints,
+                routeWhileDragging: false, 
+                // OSRMサービスを利用して道路経路を計算 (無料で利用できるパブリックエンドポイント)
+                router: L.Routing.osrmv1({
+                    serviceUrl: 'https://router.project-osrm.org/route/v1',
+                    profile: 'driving' // 自動車ルート
+                }),
+                lineOptions: {
+                    styles: [{ color: 'blue', opacity: 0.8, weight: 5 }] // ルート線のスタイル
+                },
+                // スタート・ゴールの標準マーカーを非表示にする
+                createMarker: () => { return null; }, 
+                // ルート案内パネルを非表示にする
+                show: false 
+            }).addTo(map);
+            
+            // ==========================================================
+            // 4. Firebaseからのリアルタイム更新処理
+            // ==========================================================
+
+            database.ref('bus_locations/').on('value', (snapshot) => {
+                const locations = snapshot.val();
+                if (!locations) return;
+
+                Object.keys(locations).forEach(busId => {
+                    const busData = locations[busId];
+                    // Leafletは緯度/経度の配列 [lat, lng] を使います
+                    const position = [busData.lat, busData.lng]; 
+
+                    if (busMarkers[busId]) {
+                        // 既にマーカーがある場合: 位置を更新
+                        busMarkers[busId].setLatLng(position);
+                    } else {
+                        // 新しいマーカーを作成
+                        busMarkers[busId] = L.marker(position, { icon: busIcon })
+                            .addTo(map)
+                            .bindPopup(`<b>大学バス ${busId}</b><br>最終更新: ${new Date(busData.timestamp).toLocaleTimeString()}`);
+                    }
+                    
+                    // 【おまけ】Bus_01 に地図の中心を追従させる
+                    if (busId === 'Bus_01') {
+                        map.setView(position, map.getZoom(), {
+                            animate: true,
+                            duration: 0.5 
+                        });
+                    }
+                });
+            });
+        }
+        initLeafletMap();
+    </script>
+</body>
+</html>
